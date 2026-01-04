@@ -1,0 +1,28 @@
+{
+  "added_tokens_decoder": {
+    "11": {
+      "content": "=",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "12": {
+      "content": " ",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    }
+  },
+  "bos_token": null,
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "=",
+  "extra_special_tokens": {},
+  "model_max_length": 512,
+  "pad_token": " ",
+  "tokenizer_class": "CharTokenizer",
+  "unk_token": null
+}

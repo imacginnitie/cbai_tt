@@ -37,7 +37,7 @@ dataset_pars:
 # FT parameters
 finetuning_pars:
   save_total_limit: 20  # Keep more checkpoints to find best epoch
-  num_train_epochs: 20  # Reduced to prevent overfitting, will select best epoch later
+  num_train_epochs: 10  # Reduced to prevent overfitting, will select best epoch later
   per_device_train_batch_size: 64  # Batch size per GPU (64 examples per step)
   gradient_accumulation_steps: 1
   reference_learning_rate: 5e-4

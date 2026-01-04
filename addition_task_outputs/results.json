@@ -1,0 +1,16 @@
+{
+  "id_test": {
+    "exact": 0.9163,
+    "normalized": 0.9163,
+    "exact_correct": 9163,
+    "normalized_correct": 9163,
+    "total": 10000
+  },
+  "ood_test": {
+    "exact": 0.0,
+    "normalized": 0.0,
+    "exact_correct": 0,
+    "normalized_correct": 0,
+    "total": 10000
+  }
+}
