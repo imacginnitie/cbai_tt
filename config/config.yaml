@@ -27,15 +27,20 @@ model_pars:
   hf_tokenizer_id: ???
 
 dataset_pars:
-  apply_chat_template: true
+  apply_chat_template: false
+  k: 4
+  train_size: 50000
+  val_size: 10000  # Match test size for better balance
+  test_id_size: 10000
+  test_ood_size: 10000
 
 # FT parameters
 finetuning_pars:
-  save_total_limit: 10
-  num_train_epochs: 1
-  per_device_train_batch_size: 4
+  save_total_limit: 20  # Keep more checkpoints to find best epoch
+  num_train_epochs: 20  # Reduced to prevent overfitting, will select best epoch later
+  per_device_train_batch_size: 64  # Batch size per GPU (64 examples per step)
   gradient_accumulation_steps: 1
-  reference_learning_rate: 1e-6
+  reference_learning_rate: 5e-4
   lr_scheduler_type: "linear"
   save_n_per_epoch: 1
   log_n_per_epoch: 10

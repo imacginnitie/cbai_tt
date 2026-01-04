@@ -7,8 +7,12 @@ wandb:
 seed: 1
 model_pars:
   model_dir: ""
-  hf_model_id: "openai-community/gpt2-medium"
-  hf_tokenizer_id: "openai-community/gpt2-medium"
+  hf_model_id: "gpt2"  # Base config only, weights random
+  hf_tokenizer_id: "gpt2"  # Placeholder, will use custom tokenizer
+  num_hidden_layers: 4
+  hidden_size: 128
+  num_attention_heads: 4
+  intermediate_size: 512
 
 resume: false
 method: "scratch"

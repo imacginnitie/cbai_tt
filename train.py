@@ -1,16 +1,17 @@
-from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
+import logging
+import os
+import random
+
+import hydra
+import torch
+import wandb
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
-import logging
-import random
-import wandb
-import torch
-import hydra
-import os
-
-from src.huggingface_callbacks import SaveCheckpointCallback, GreedyDecodeOnce
 from src.dataset import get_datasets
 from src.helpers import log_config
+from src.huggingface_callbacks import GreedyDecodeOnce, SaveCheckpointCallback
+from src.tokenizer import CharTokenizer
 
 
 def global_setup(args, wandb_run_id=None):
@@ -24,7 +25,7 @@ def global_setup(args, wandb_run_id=None):
         random.seed(args.seed)
         torch.manual_seed(args.seed)
         torch.backends.cudnn.deterministic = True
-    
+
     if args.resume:
         run = wandb.init(
             entity=str(args.wandb.entity),
@@ -51,13 +52,12 @@ def global_setup(args, wandb_run_id=None):
         )
         run_id = wandb.run.id
         run_name = wandb.run.name
-                
+
     return run_id, run_name
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def main(args):
-
     log_config(args)
 
     if not args.resume:
@@ -66,27 +66,60 @@ def main(args):
         output_dir = os.path.join(args.save_dir, f"{wandb_run_name}")
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        tokenizer = AutoTokenizer.from_pretrained(args.model_pars.hf_tokenizer_id)
+
+        # Use custom tokenizer for scratch training
+        if args.method == "scratch":
+            tokenizer = CharTokenizer()
+            logging.info(
+                f"Using custom character-level tokenizer with vocab size {len(tokenizer)}"
+            )
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(args.model_pars.hf_tokenizer_id)
     else:
         model_dir = args.model_pars.model_dir
         output_dir = os.path.dirname(model_dir)
         resume_step = int(model_dir.split("-")[-1])
-        logging.info(f"Loading trained model from step {resume_step} and resuming: {args.model_pars.model_dir}")
+        logging.info(
+            f"Loading trained model from step {resume_step} and resuming: {args.model_pars.model_dir}"
+        )
         wandb_run_id = None
         with open(os.path.join(model_dir, "wandb_run_id.txt"), "r") as f:
             wandb_run_id = f.read().strip()
         global_setup(args, wandb_run_id)
-        tokenizer = AutoTokenizer.from_pretrained(args.model_pars.model_dir)
+
+        # Load tokenizer (custom if scratch, otherwise HF)
+        if args.method == "scratch":
+            tokenizer = CharTokenizer.from_pretrained(args.model_pars.model_dir)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(args.model_pars.model_dir)
     train_dataset, eval_dataset = get_datasets(args, tokenizer)
 
-    effective_batch_size = args.finetuning_pars.per_device_train_batch_size * max(1, args.finetuning_pars.gradient_accumulation_steps) * torch.cuda.device_count()
+    effective_batch_size = (
+        args.finetuning_pars.per_device_train_batch_size
+        * max(1, args.finetuning_pars.gradient_accumulation_steps)
+        * torch.cuda.device_count()
+    )
     steps_per_epoch = len(train_dataset) // effective_batch_size
     if len(train_dataset) < effective_batch_size:
         steps_per_epoch = 1
-    save_every_n_steps = steps_per_epoch // args.finetuning_pars.save_n_per_epoch if args.finetuning_pars.save_n_per_epoch > 0 else args.finetuning_pars.save_every_n_steps
-    eval_every_n_steps = steps_per_epoch // args.finetuning_pars.eval_n_per_epoch if args.finetuning_pars.eval_n_per_epoch > 0 else args.finetuning_pars.eval_every_n_steps
-    logging_steps = max(steps_per_epoch // args.finetuning_pars.log_n_per_epoch, 1) if args.finetuning_pars.log_n_per_epoch > 0 else args.finetuning_pars.logging_steps
-    logging.info(f"Effective batch size: {effective_batch_size}, steps per epoch: {steps_per_epoch}, saving every {save_every_n_steps} steps, evaluating every {eval_every_n_steps} steps, logging steps {logging_steps}.") 
+    save_every_n_steps = (
+        steps_per_epoch // args.finetuning_pars.save_n_per_epoch
+        if args.finetuning_pars.save_n_per_epoch > 0
+        else args.finetuning_pars.save_every_n_steps
+    )
+    eval_every_n_steps = (
+        steps_per_epoch // args.finetuning_pars.eval_n_per_epoch
+        if args.finetuning_pars.eval_n_per_epoch > 0
+        else args.finetuning_pars.eval_every_n_steps
+    )
+    logging_steps = (
+        max(steps_per_epoch // args.finetuning_pars.log_n_per_epoch, 1)
+        if args.finetuning_pars.log_n_per_epoch > 0
+        else args.finetuning_pars.logging_steps
+    )
+    logging.info(
+        f"Effective batch size: {effective_batch_size}, steps per epoch: {steps_per_epoch}, saving every {save_every_n_steps} steps, evaluating every {eval_every_n_steps} steps, logging steps {logging_steps}."
+    )
 
     training_args = SFTConfig(
         output_dir=output_dir,
@@ -109,7 +142,9 @@ def main(args):
         max_grad_norm=args.finetuning_pars.max_grad_norm,
         packing=args.finetuning_pars.packing,
         label_smoothing_factor=args.finetuning_pars.label_smoothing_factor,
-        deepspeed=args.finetuning_pars.deepspeed if args.finetuning_pars.deepspeed != "" else None,
+        deepspeed=args.finetuning_pars.deepspeed
+        if args.finetuning_pars.deepspeed != ""
+        else None,
         ddp_find_unused_parameters=args.finetuning_pars.ddp_find_unused_parameters,
         bf16=args.finetuning_pars.bf16,
         fp16=args.finetuning_pars.fp16,
@@ -122,11 +157,13 @@ def main(args):
         dataloader_persistent_workers=args.finetuning_pars.dataloader_persistent_workers,
     )
     if args.method == "scratch":
-        config = AutoConfig.from_pretrained(args.model_pars.hf_model_id,
-                                            num_hidden_layers=args.model_pars.num_hidden_layers,
-                                            hidden_size=args.model_pars.hidden_size,
-                                            num_attention_heads=args.model_pars.num_attention_heads,
-                                            intermediate_size=args.model_pars.intermediate_size,)
+        config = AutoConfig.from_pretrained(
+            args.model_pars.hf_model_id,
+            num_hidden_layers=args.model_pars.num_hidden_layers,
+            hidden_size=args.model_pars.hidden_size,
+            num_attention_heads=args.model_pars.num_attention_heads,
+            intermediate_size=args.model_pars.intermediate_size,
+        )
         config.vocab_size = len(tokenizer)
         model = AutoModelForCausalLM.from_config(config)
         trainer = SFTTrainer(
@@ -146,19 +183,36 @@ def main(args):
             args=training_args,
         )
     else:
-        raise ValueError(f"Unknown training method: {args.method}. Options: ['scratch', 'SFT']")
+        raise ValueError(
+            f"Unknown training method: {args.method}. Options: ['scratch', 'SFT']"
+        )
 
-    check_greedy_decoding = GreedyDecodeOnce(trainer, tokenizer, prompt="The quick brown fox", max_new_tokens=16)
+    # Save tokenizer if custom
+    if args.method == "scratch" and not args.resume:
+        tokenizer.save_pretrained(output_dir)
+        logging.info(f"Saved custom tokenizer to {output_dir}")
+
+    check_greedy_decoding = GreedyDecodeOnce(
+        trainer, tokenizer, prompt="1234 + 5678 =", max_new_tokens=8
+    )
     save_checkpoint_callback = SaveCheckpointCallback(trainer)
     trainer.add_callback(check_greedy_decoding)
     trainer.add_callback(save_checkpoint_callback)
 
-    logging.info(f"Starting training on {args.model_pars.hf_model_id} using {args.method} (output dir {output_dir}).")
+    logging.info(
+        f"Starting training on {args.model_pars.hf_model_id} using {args.method} (output dir {output_dir})."
+    )
     if not args.resume:
         trainer.train()
+        # Save tokenizer after training completes
+        if args.method == "scratch":
+            tokenizer.save_pretrained(output_dir)
     else:
-        logging.info(f"Resuming training from checkpoint at {model_dir} (output dir {output_dir}).")
+        logging.info(
+            f"Resuming training from checkpoint at {model_dir} (output dir {output_dir})."
+        )
         trainer.train(resume_from_checkpoint=model_dir)
+
 
 if __name__ == "__main__":
     main()
