@@ -189,4 +189,6 @@ The model seemed to train on 4 digit addition pretty easily, with nice loss curv
 ## Discussion 
 I focused my design choices around the OOD test set. To allow for spaces to be already familiar to the model, I used spaces in the training input/output format. I used standard uniform sampling for the data generation and fairly standard ~70%/15%/15% train/val/test split (not counting the OOD test set in the split).
 
-I had expected the OOD test set to have bad results, but it would be interesting to do a deeper analysis to see if the answers correlate to any combinations of the digits (i.e. if it for "a bcd + e fgh=", the prediction "xyz" is "abc + e", or something like that). 
+I had expected the OOD test set to have bad results, but it would be interesting to do a deeper analysis to see if the answers correlate to any combinations of the digits (i.e. if it for "a bcd + e fgh=", the prediction "xyz" is "abc + e", or something like that).
+
+Clearly, what the model learns does not generalize to inputs with decimal seperators, which suggests that it is not learning addition in a human-like, flexible way, but rather memorizing a more brittle relationship between digits' positions.
